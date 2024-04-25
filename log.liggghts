@@ -1,0 +1,13 @@
+LIGGGHTS (Version LIGGGHTS-PUBLIC 3.8.0, compiled 2024-04-04-18:22:40 by jero, git commit bbd23c8521fe0a4f3f5bfd0d3dc9a7dddd68d90b)
+## Example 4:	move an intruder in a 2D granular material
+#  New tricks:  use grains as a boundary, 2D simulation, use group to control particles separately
+#  Commands that appears in previous examples will not be repeatedly explained.
+#  More command details in the documentation https://lammps.sandia.gov/doc/Commands.html
+#  LAMMPS version: LAMMPS (7 Aug 2019) on linux
+
+dimension	2
+atom_style	sphere
+boundary	p p p
+newton		off
+comm_modify	vel yes
+ERROR: Unknown command: comm_modify	vel yes (../input.cpp:259)

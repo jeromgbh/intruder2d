@@ -1,0 +1,582 @@
+LAMMPS (7 Feb 2024 - Development - patch_7Feb2024_update1-343-g99e82f9f07)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:98)
+  using 1 OpenMP thread(s) per MPI task
+## Example 4:	move an intruder in a 2D granular material
+#  New tricks:  use grains as a boundary, 2D simulation, use group to control particles separately
+#  Commands that appears in previous examples will not be repeatedly explained.
+#  More command details in the documentation https://lammps.sandia.gov/doc/Commands.html
+#  LAMMPS version: LAMMPS (7 Aug 2019) on linux
+
+# 2D
+dimension	2
+
+#style = amoeba or angle or atomic or body or bond or charge or dielectric or dipole or dpd or edpd or electron or ellipsoid or full or line or mdpd or molecular or oxdna or peri or smd or sph or sphere or bpm/sphere or spin or tdpd or tri or template or wavepacket or hybrid
+atom_style	sphere
+
+# Fronteira x y z -> p = todas periódicas
+boundary	p p p
+
+# 3a. Lei de Newton para iterações emparelhadas
+newton		on
+
+#vel value = yes or no = do or do not communicate velocity info with ghost atoms
+comm_modify	vel yes
+
+# Região    ID  Bloco xlo,xhi,ylo,yhi,zlo,zhi = bounds of block in all dimensions (distance units)
+#                                              units value = lattice or box
+region		reg block -5  5   -5  5   -0.5 0.5 units box
+
+# Define a simulação com dois tipos de partículas
+#This command creates a simulation box based on the specified region. Thus a region command must first be used to define a geometric domain. It also partitions the simulation box into a regular 3d grid of rectangular bricks, one per processor, based on the number of processors being used and the settings of the processors command. The partitioning can later be changed by the balance or fix balance commands.
+#           Tipo de dados - The argument N is the number of atom types that will be used in the simulation.
+create_box	2 reg
+Created orthogonal box = (-5 -5 -0.5) to (5 5 0.5)
+  5 by 4 by 1 MPI processor grid
+
+# Lê as posições de cada grão do arquivo "data"
+# merge = add new atoms with their atom IDs (and molecule IDs) unchanged
+read_data	data add merge
+Reading data file ...
+  orthogonal box = (-5 -5 -0.5) to (5 5 0.5)
+  5 by 4 by 1 MPI processor grid
+  reading atoms ...
+  76 atoms
+  read_data CPU = 0.063 seconds
+
+# Identifica os intrusos no arquivo "data"
+group		intruder1 id == 32
+1 atoms in group intruder1
+group		intruder2 id == 76
+1 atoms in group intruder2
+
+# Agrupa grãos tipo <= 1 (Intrusos são tipo 2)
+group		packing type <= 1
+74 atoms in group packing
+
+# Aplica aos grãos a operação nve/sphere: Perform constant NVE integration to update position, velocity, and angular velocity for finite-size spherical particles in the group each timestep. V is volume; E is energy. This creates a system trajectory consistent with the microcanonical ensemble.
+fix		1 packing nve/sphere
+fix		11 intruder1 nve/sphere
+fix		12 intruder2 nve/sphere
+
+# Define as fronteiras de emparelhamenos: 0,2 unidades e aplica estilo bin: The bin style creates the list by binning which is an operation that scales linearly with N/P, the number of atoms per processor where N = total number of atoms and P = number of processors. It is almost always faster than the nsq style which scales as (N/P)^2. For unsolvated small molecules in a non-periodic box, the nsq choice can sometimes be faster. Either style should give the same answers.
+neighbor	0.2 bin
+
+# This command sets parameters that affect the building and use of pairwise neighbor lists. Depending on what pair interactions and other commands are defined, a simulation may require one or more neighbor lists. The every, delay, check, and once options affect how often lists are built as a simulation runs. The delay setting means never build new lists until at least N steps after the previous build. The every setting means attempt to build lists every M steps (after the delay has passed). If the check setting is no, the lists are built on the first step that satisfies the delay and every settings. If the check setting is yes, then the every and delay settings determine when a build may possibly be performed, but an actual build only occurs if at least one atom has moved more than half the neighbor skin distance (specified in the neighbor command) since the last neighbor list build.
+neigh_modify	delay 0
+
+# Set the formula(s) LAMMPS uses to compute pairwise interactions.
+# gran/hooke/history - granular potential without history effects
+pair_style      gran/hooke/history 400.0 NULL 10.0 NULL 0.75 1
+
+# Specify the pairwise force field coefficients for one or more pairs of atom types. The number and meaning of the coefficients depends on the pair style. Pair coefficients can also be set in the data file read by the read_data command or in a restart file.
+pair_coeff	* *
+
+# Set the timestep size for subsequent molecular dynamics simulations.
+timestep	0.001
+
+# Explicita que é uma simulação 2D
+fix             2 all enforce2d
+
+# Define a diagnostic computation that will be performed on a group of atoms
+# ke = Define a computation that calculates the translational kinetic energy of a group of particles.
+compute		ke all ke
+
+# The compute erotate/sphere command in LAMMPS calculates the rotational kinetic energy of each particle in a group.
+compute		re all erotate/sphere
+
+# Set the style and content for printing thermodynamic data to the screen and log files.
+thermo_style	custom step atoms c_ke c_re
+# Compute and print thermodynamic info (e.g. temperature, energy, pressure) on timesteps that are a multiple of N and at the beginning and end of a simulation. A value of 0 will only print thermodynamics at the beginning and end.
+thermo		100
+# Set options for how thermodynamic information is computed and printed by LAMMPS.
+# The lost keyword determines whether LAMMPS checks for lost atoms each time it computes thermodynamics and what it does if atoms are lost. An atom can be “lost” if it moves across a non-periodic simulation box boundary or if it moves more than a box length outside the simulation domain (or more than a processor subdomain length) before reneighboring occurs. The latter case is typically due to bad dynamics (e.g., too large a time step and/or huge forces and velocities). If the value is ignore, LAMMPS does not check for lost atoms. If the value is error or warn, LAMMPS checks and either issues an error or warning. The simulation will exit with an error and continue with a warning. A warning will only be issued once, the first time an atom is lost. This can be a useful debugging option.
+thermo_modify	lost warn norm no
+
+# Gera imagens
+dump		2 all image 100 *.jpg type diameter zoom 1.6 view 0 0
+dump_modify	2 pad 5
+
+# Primeira execução para acomodar os grãos
+run 15000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 3.2
+  ghost atom cutoff = 3.2
+  binsize = 1.6, bins = 7 7 1
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair gran/hooke/history, perpetual
+      attributes: half, newton on, size, history
+      pair build: half/size/bin/atomonly/newton
+      stencil: half/bin/2d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 9.841 | 9.841 | 9.841 Mbytes
+   Step        Atoms         c_ke           c_re     
+         0          76   0              0            
+       100          76   1415.8732      147.08696    
+       200          76   538.43029      68.75979     
+       300          76   248.7794       66.87068     
+       400          76   150.5946       31.966117    
+       500          76   104.90649      23.562703    
+       600          76   55.795572      20.604758    
+       700          76   30.890271      14.453201    
+       800          76   23.666528      11.602955    
+       900          76   19.365005      5.9381449    
+      1000          76   16.945656      5.2356063    
+      1100          76   13.635217      5.1416842    
+      1200          76   14.525596      4.9079974    
+      1300          76   11.189196      5.0431414    
+      1400          76   6.003109       3.577953     
+      1500          76   5.4980548      2.5956909    
+      1600          76   5.4174147      2.0649455    
+      1700          76   4.0218959      0.94882828   
+      1800          76   2.7451867      0.5948533    
+      1900          76   2.4650146      0.86611326   
+      2000          76   2.0050482      0.71385776   
+      2100          76   1.6849792      0.58942891   
+      2200          76   1.833835       0.39811871   
+      2300          76   1.9332312      0.47615603   
+      2400          76   1.4933959      0.5747487    
+      2500          76   1.2106202      0.52697595   
+      2600          76   1.1125087      0.69507708   
+      2700          76   1.2668042      0.61216745   
+      2800          76   1.156987       0.40003147   
+      2900          76   0.99432197     0.28319907   
+      3000          76   0.90323417     0.34192308   
+      3100          76   1.1392752      0.3812657    
+      3200          76   1.2496339      0.28685803   
+      3300          76   0.91999024     0.32978007   
+      3400          76   0.92728983     0.44240875   
+      3500          76   0.98144193     0.50777248   
+      3600          76   0.83565987     0.47429427   
+      3700          76   0.70582222     0.29838414   
+      3800          76   0.79004376     0.32112647   
+      3900          76   0.72993593     0.29763032   
+      4000          76   0.61942732     0.19650393   
+      4100          76   0.5314112      0.16481141   
+      4200          76   0.39407642     0.12913107   
+      4300          76   0.30999601     0.075888062  
+      4400          76   0.26704693     0.071957364  
+      4500          76   0.25669008     0.065529079  
+      4600          76   0.21700851     0.054747648  
+      4700          76   0.17454708     0.044945872  
+      4800          76   0.12999795     0.02629497   
+      4900          76   0.1075088      0.0174056    
+      5000          76   0.14291411     0.02987592   
+      5100          76   0.13863919     0.029551903  
+      5200          76   0.10188106     0.025397794  
+      5300          76   0.085248359    0.03452778   
+      5400          76   0.083267531    0.039354812  
+      5500          76   0.089735134    0.027604144  
+      5600          76   0.09514217     0.018403487  
+      5700          76   0.08590839     0.012894107  
+      5800          76   0.068049655    0.013846922  
+      5900          76   0.056692615    0.016532882  
+      6000          76   0.044181069    0.014401479  
+      6100          76   0.032856096    0.013136452  
+      6200          76   0.03867599     0.014960375  
+      6300          76   0.049713799    0.014571463  
+      6400          76   0.054731131    0.013964539  
+      6500          76   0.044994236    0.011439158  
+      6600          76   0.024167923    0.0084326588 
+      6700          76   0.017815835    0.0079371269 
+      6800          76   0.025100988    0.0099587768 
+      6900          76   0.030709939    0.010354562  
+      7000          76   0.028295207    0.0090129276 
+      7100          76   0.026870497    0.0076477016 
+      7200          76   0.024839096    0.0046992588 
+      7300          76   0.021129808    0.0023931201 
+      7400          76   0.021024711    0.0041481689 
+      7500          76   0.021508834    0.0075259571 
+      7600          76   0.015792381    0.0082159959 
+      7700          76   0.010669425    0.0068032883 
+      7800          76   0.01013185     0.005135002  
+      7900          76   0.015331132    0.0032192305 
+      8000          76   0.021060979    0.0026685636 
+      8100          76   0.020712887    0.0021175504 
+      8200          76   0.016139556    0.0022177584 
+      8300          76   0.010964939    0.0033177701 
+      8400          76   0.00698448     0.0038260852 
+      8500          76   0.0068235723   0.0035163219 
+      8600          76   0.01007032     0.0029227161 
+      8700          76   0.013845542    0.0023602929 
+      8800          76   0.015183481    0.0017432776 
+      8900          76   0.013769801    0.0016585292 
+      9000          76   0.011173682    0.0020380742 
+      9100          76   0.0089061701   0.002352919  
+      9200          76   0.0066623529   0.0027927991 
+      9300          76   0.0055000488   0.0034641004 
+      9400          76   0.0058449412   0.0039856439 
+      9500          76   0.0066011895   0.0037000632 
+      9600          76   0.0080518427   0.0026103057 
+      9700          76   0.010010369    0.0019160939 
+      9800          76   0.010561277    0.0015104321 
+      9900          76   0.0084630986   0.0014736592 
+     10000          76   0.0048203735   0.0018833978 
+     10100          76   0.0023760932   0.0022383172 
+     10200          76   0.0028178228   0.0021436728 
+     10300          76   0.0053402387   0.0017422311 
+     10400          76   0.0079365023   0.0014775876 
+     10500          76   0.0089323302   0.0014329643 
+     10600          76   0.0078059588   0.0013926064 
+     10700          76   0.0054684311   0.0011519306 
+     10800          76   0.0034549439   0.00083666768
+     10900          76   0.0025808855   0.00080589046
+     11000          76   0.0026371868   0.0011736051 
+     11100          76   0.0035664823   0.0015595131 
+     11200          76   0.0050060456   0.0016590158 
+     11300          76   0.0061103658   0.0012566637 
+     11400          76   0.0063072954   0.00077594321
+     11500          76   0.0051251592   0.00047108015
+     11600          76   0.0035313774   0.00050550436
+     11700          76   0.0018890059   0.00077640028
+     11800          76   0.0012850475   0.00086808941
+     11900          76   0.00193332     0.00097130227
+     12000          76   0.00351304     0.00094934734
+     12100          76   0.0048543351   0.00081242961
+     12200          76   0.0050352431   0.00055298885
+     12300          76   0.0041905057   0.00037600472
+     12400          76   0.0027515368   0.00033384541
+     12500          76   0.0015800741   0.00039101318
+     12600          76   0.0012471759   0.0004741824 
+     12700          76   0.0016983752   0.00056472056
+     12800          76   0.0025909281   0.00059420935
+     12900          76   0.003360155    0.00056193941
+     13000          76   0.003663897    0.00047364246
+     13100          76   0.0032896956   0.00044991673
+     13200          76   0.0024517905   0.00043506999
+     13300          76   0.0015534486   0.00036915426
+     13400          76   0.0010128789   0.0003038171 
+     13500          76   0.0010439957   0.00033608737
+     13600          76   0.0016041344   0.00043049452
+     13700          76   0.0024076205   0.00047168762
+     13800          76   0.0029946589   0.00043503613
+     13900          76   0.0029826007   0.00038502206
+     14000          76   0.002354199    0.00032735963
+     14100          76   0.0014705753   0.00024746519
+     14200          76   0.00080282572  0.00017946218
+     14300          76   0.00066646429  0.00018587587
+     14400          76   0.0010755387   0.00027801115
+     14500          76   0.0017379887   0.00040544333
+     14600          76   0.0022659671   0.00045701052
+     14700          76   0.0023982516   0.00039346218
+     14800          76   0.0020549399   0.00029900252
+     14900          76   0.0014195297   0.00022309714
+     15000          76   0.00080503422  0.00019076536
+Loop time of 4.45113 on 20 procs for 15000 steps with 76 atoms
+
+Performance: 291162.041 tau/day, 3369.931 timesteps/s, 256.115 katom-step/s
+95.1% CPU use with 20 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.0068602  | 0.0114     | 0.020905   |   3.1 |  0.26
+Neigh   | 0.0002418  | 0.00032463 | 0.00043951 |   0.0 |  0.01
+Comm    | 0.98801    | 1.3183     | 1.5419     |  16.8 | 29.62
+Output  | 0.90196    | 1.4136     | 2.6918     |  38.5 | 31.76
+Modify  | 0.011359   | 0.013071   | 0.014745   |   0.8 |  0.29
+Other   |            | 1.694      |            |       | 38.07
+
+Nlocal:            3.8 ave           7 max           1 min
+Histogram: 1 1 0 7 0 6 3 0 1 1
+Nghost:          52.15 ave          56 max          45 min
+Histogram: 1 0 1 2 2 2 2 2 2 6
+Neighs:            9.4 ave          19 max           5 min
+Histogram: 6 1 3 2 1 6 0 0 0 1
+
+Total # of neighbors = 188
+Ave neighs/atom = 2.4736842
+Neighbor list builds = 91
+Dangerous builds = 0
+
+neigh_modify	exclude group intruder1 intruder2
+unfix		12
+
+fix		hxFix intruder1 move linear 0.0 0.9 NULL
+unfix		11
+
+run 25000
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Per MPI rank memory allocation (min/avg/max) = 10.47 | 10.47 | 10.47 Mbytes
+   Step        Atoms         c_ke           c_re     
+     15000          76   0.00080503422  0.00019076536
+     15100          76   6.6538392      0.15739889   
+     15200          76   8.2315772      0.46809098   
+     15300          76   11.706167      0.83048521   
+     15400          76   15.820544      0.85172505   
+     15500          76   18.36311       0.89061538   
+     15600          76   18.448774      0.802196     
+     15700          76   19.047957      1.2755107    
+     15800          76   19.935676      1.2423357    
+     15900          76   20.015106      1.2670331    
+     16000          76   18.337902      1.0425453    
+     16100          76   17.846149      1.2135166    
+     16200          76   19.175733      1.7578097    
+     16300          76   21.481031      1.9627954    
+     16400          76   24.90199       1.988854     
+     16500          76   28.243871      2.0529107    
+     16600          76   29.08903       1.8736153    
+     16700          76   28.499689      1.7948541    
+     16800          76   25.326929      1.9222013    
+     16900          76   21.283228      1.7570153    
+     17000          76   19.537247      2.0101163    
+     17100          76   18.079195      2.0672329    
+     17200          76   19.227395      3.1911742    
+     17300          76   21.22594       2.2288158    
+     17400          76   19.671112      0.87147231   
+     17500          76   17.350102      0.96671909   
+     17600          76   17.176885      1.4569689    
+     17700          76   19.43947       2.5187282    
+     17800          76   22.042699      3.0486803    
+     17900          76   21.33432       3.6986564    
+     18000          76   20.890184      3.3279146    
+     18100          76   17.880683      3.5231038    
+     18200          76   16.401428      3.197519     
+     18300          76   15.569705      2.1033369    
+     18400          76   16.527584      2.0893971    
+     18500          76   17.650056      2.500463     
+     18600          76   17.558165      3.6880973    
+     18700          76   20.293302      3.998863     
+     18800          76   21.055022      2.6002641    
+     18900          76   20.804573      1.9183934    
+     19000          76   18.27021       2.5701269    
+     19100          76   16.496565      2.0492682    
+     19200          76   17.010211      2.1513086    
+     19300          76   18.784977      2.0938337    
+     19400          76   19.607743      2.5353839    
+     19500          76   21.088732      1.988143     
+     19600          76   23.091437      2.359371     
+     19700          76   24.482896      2.8994726    
+     19800          76   23.967673      1.4692298    
+     19900          76   21.882608      1.9775147    
+     20000          76   20.797172      2.1992386    
+     20100          76   22.03983       1.6531656    
+     20200          76   21.562153      1.6838552    
+     20300          76   22.071682      2.6138423    
+     20400          76   19.541383      2.0316017    
+     20500          76   16.260642      1.4367421    
+     20600          76   16.490035      1.2261464    
+     20700          76   17.668326      1.7349401    
+     20800          76   17.30635       1.0563099    
+     20900          76   16.876742      1.1650231    
+     21000          76   17.818556      1.272979     
+     21100          76   17.882644      1.2475699    
+     21200          76   17.201481      0.93546558   
+     21300          76   17.901447      1.625586     
+     21400          76   19.994309      2.4651056    
+     21500          76   24.746161      4.6343624    
+     21600          76   29.39255       6.4503776    
+     21700          76   27.867606      4.2610646    
+     21800          76   22.838192      5.2123956    
+     21900          76   21.301182      4.2252646    
+     22000          76   18.728251      2.2486428    
+     22100          76   19.971554      3.6792258    
+     22200          76   18.058394      3.0110627    
+     22300          76   16.513198      2.7233172    
+     22400          76   14.923899      2.4175611    
+     22500          76   15.98454       2.7203867    
+     22600          76   15.892111      2.378434     
+     22700          76   14.028169      1.4934742    
+     22800          76   12.143787      0.87467682   
+     22900          76   11.848829      1.3300537    
+     23000          76   12.810812      2.3582578    
+     23100          76   16.49989       4.3575534    
+     23200          76   18.942878      2.6419927    
+     23300          76   19.771489      3.4891282    
+     23400          76   20.79764       3.7756667    
+     23500          76   22.338699      4.2691446    
+     23600          76   23.343858      4.5662367    
+     23700          76   21.326245      3.5280232    
+     23800          76   19.972449      2.8424204    
+     23900          76   19.23794       2.7451686    
+     24000          76   21.981508      2.2888752    
+     24100          76   24.413676      2.0539555    
+     24200          76   23.426937      1.7152311    
+     24300          76   21.692352      2.3831157    
+     24400          76   20.838364      2.4459455    
+     24500          76   20.690981      2.3112931    
+     24600          76   21.988496      2.4025802    
+     24700          76   24.08113       2.5560256    
+     24800          76   25.042161      2.4416668    
+     24900          76   25.241688      2.1772186    
+     25000          76   22.61972       2.9424474    
+     25100          76   20.557501      2.4524588    
+     25200          76   20.591759      2.9319629    
+     25300          76   22.394077      2.4906061    
+     25400          76   25.597396      1.8531303    
+     25500          76   26.593738      1.145879     
+     25600          76   23.070018      1.4868507    
+     25700          76   19.472013      2.4020116    
+     25800          76   18.842875      2.6710621    
+     25900          76   18.945931      2.2313741    
+     26000          76   19.873464      1.8688231    
+     26100          76   21.577529      1.8835181    
+     26200          76   23.46627       1.7397002    
+     26300          76   22.354391      2.288004     
+     26400          76   23.119141      3.71429      
+     26500          76   23.563923      4.8088985    
+     26600          76   27.288561      5.2416186    
+     26700          76   24.801971      5.4020397    
+     26800          76   22.792734      5.9145571    
+     26900          76   17.803764      5.5556174    
+     27000          76   15.150538      4.3869804    
+     27100          76   14.940494      2.6963139    
+     27200          76   13.141556      3.054187     
+     27300          76   12.69775       2.1795935    
+     27400          76   14.558782      1.8754449    
+     27500          76   15.621153      1.3660988    
+     27600          76   16.771393      1.5114355    
+     27700          76   16.424562      1.5949474    
+     27800          76   15.668579      1.2598127    
+     27900          76   15.959509      1.3681352    
+     28000          76   15.852419      1.4969696    
+     28100          76   15.915009      2.1075123    
+     28200          76   16.204855      2.5613068    
+     28300          76   16.235657      3.6037451    
+     28400          76   16.681142      3.7915649    
+     28500          76   15.987722      2.5689538    
+     28600          76   15.474034      2.6462257    
+     28700          76   16.469416      3.0711966    
+     28800          76   16.247195      3.3856516    
+     28900          76   17.493917      4.9086209    
+     29000          76   19.509344      3.2655284    
+     29100          76   20.457147      2.4047795    
+     29200          76   21.647553      1.909971     
+     29300          76   24.206252      2.687159     
+     29400          76   23.723965      2.3864783    
+     29500          76   22.569423      2.0682532    
+     29600          76   20.265515      1.8373767    
+     29700          76   21.296967      1.3795208    
+     29800          76   21.136488      1.3420714    
+     29900          76   18.461179      2.2081305    
+     30000          76   15.820049      1.5737912    
+     30100          76   14.686818      0.69070656   
+     30200          76   14.221249      0.98598512   
+     30300          76   14.281499      1.9642838    
+     30400          76   15.274142      2.5141506    
+     30500          76   16.860694      3.2170737    
+     30600          76   17.854115      3.5342649    
+     30700          76   17.067603      1.6193996    
+     30800          76   16.237251      2.0018553    
+     30900          76   18.514264      2.2126052    
+     31000          76   20.454016      1.9841299    
+     31100          76   22.815363      2.5703827    
+     31200          76   24.125915      2.806096     
+     31300          76   24.915544      2.5668499    
+     31400          76   25.445558      2.374369     
+     31500          76   26.924063      2.1094683    
+     31600          76   30.588517      2.9367549    
+     31700          76   34.588         3.7273372    
+     31800          76   36.295175      4.6169489    
+     31900          76   34.855552      3.1859426    
+     32000          76   30.998829      3.1766468    
+     32100          76   28.209629      2.7062902    
+     32200          76   25.357339      3.0708349    
+     32300          76   21.162262      2.2667646    
+     32400          76   18.964498      1.6969486    
+     32500          76   16.191311      2.7462312    
+     32600          76   14.903166      3.5404785    
+     32700          76   15.058521      3.3587745    
+     32800          76   14.821532      2.349053     
+     32900          76   16.283992      3.0269661    
+     33000          76   15.344438      2.6640604    
+     33100          76   15.200517      2.1157805    
+     33200          76   15.235662      1.5677378    
+     33300          76   15.136301      1.0532736    
+     33400          76   13.250287      1.0726118    
+     33500          76   13.28214       0.81061274   
+     33600          76   14.392251      0.74318612   
+     33700          76   16.557506      1.3412845    
+     33800          76   19.728817      2.0509227    
+     33900          76   23.336309      3.1891458    
+     34000          76   24.029881      3.5308469    
+     34100          76   20.732903      2.2241467    
+     34200          76   18.648513      2.9273567    
+     34300          76   14.703815      3.0727068    
+     34400          76   12.457075      2.619594     
+     34500          76   13.022974      3.3602069    
+     34600          76   13.888444      2.8895089    
+     34700          76   16.171988      3.188091     
+     34800          76   18.502592      1.678632     
+     34900          76   20.234283      1.7317401    
+     35000          76   22.603192      1.3906172    
+     35100          76   23.388432      1.9104027    
+     35200          76   24.980326      2.2042398    
+     35300          76   27.436442      3.3236703    
+     35400          76   31.173315      3.5539147    
+     35500          76   32.413832      2.7523452    
+     35600          76   32.890902      3.1140103    
+     35700          76   29.082331      2.9086546    
+     35800          76   24.50965       1.9967388    
+     35900          76   21.824627      2.2808859    
+     36000          76   18.435523      2.0157199    
+     36100          76   16.148142      2.0836577    
+     36200          76   15.194332      1.5907514    
+     36300          76   14.857367      1.9966446    
+     36400          76   14.421562      1.5967593    
+     36500          76   16.204919      2.0372091    
+     36600          76   19.139846      2.2260809    
+     36700          76   21.935875      2.4894771    
+     36800          76   22.588213      2.7907354    
+     36900          76   24.824297      2.3776904    
+     37000          76   26.282452      1.583268     
+     37100          76   28.4904        1.6826981    
+     37200          76   31.04388       2.0707353    
+     37300          76   33.0453        1.6627183    
+     37400          76   33.429254      1.4471839    
+     37500          76   31.651451      2.0598285    
+     37600          76   30.737193      2.5590983    
+     37700          76   29.90403       2.1139209    
+     37800          76   27.94266       2.8033132    
+     37900          76   24.685513      3.1751077    
+     38000          76   22.102356      3.5131622    
+     38100          76   20.079804      3.614529     
+     38200          76   19.523896      2.8914035    
+     38300          76   19.54014       3.7595534    
+     38400          76   20.767084      5.4285444    
+     38500          76   22.805276      6.2420004    
+     38600          76   25.293825      3.8371331    
+     38700          76   23.98576       2.7728273    
+     38800          76   21.996433      4.2710923    
+     38900          76   19.083986      3.6880094    
+     39000          76   17.62887       2.360416     
+     39100          76   17.611771      1.980222     
+     39200          76   17.484789      1.2194216    
+     39300          76   18.433733      1.2996581    
+     39400          76   18.807316      1.3872017    
+     39500          76   18.491786      1.4698046    
+     39600          76   19.167272      1.8936732    
+     39700          76   18.60947       1.1251055    
+     39800          76   18.044695      0.75493242   
+     39900          76   17.45921       0.83810938   
+     40000          76   17.025763      1.3147615    
+Loop time of 7.1285 on 20 procs for 25000 steps with 76 atoms
+
+Performance: 303008.973 tau/day, 3507.048 timesteps/s, 266.536 katom-step/s
+95.1% CPU use with 20 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 0.01257    | 0.019553   | 0.026832   |   2.4 |  0.27
+Neigh   | 0.0012881  | 0.0020148  | 0.003138   |   0.8 |  0.03
+Comm    | 1.5201     | 1.9427     | 2.1327     |  14.7 | 27.25
+Output  | 1.5541     | 2.3985     | 4.5115     |  50.7 | 33.65
+Modify  | 0.029546   | 0.031855   | 0.03648    |   1.1 |  0.45
+Other   |            | 2.734      |            |       | 38.35
+
+Nlocal:            3.8 ave           6 max           1 min
+Histogram: 2 0 1 0 4 0 6 0 6 1
+Nghost:          51.35 ave          56 max          48 min
+Histogram: 2 2 2 5 0 3 4 1 0 1
+Neighs:           9.05 ave          16 max           3 min
+Histogram: 3 1 1 4 1 1 5 3 0 1
+
+Total # of neighbors = 181
+Ave neighs/atom = 2.3815789
+Neighbor list builds = 379
+Dangerous builds = 0
+
+Total wall time: 0:00:11
