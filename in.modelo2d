@@ -21,8 +21,8 @@ comm_modify	vel yes
 
 # Região    ID  Bloco xlo,xhi,ylo,yhi,zlo,zhi = bounds of block in all dimensions (distance units)
 #                                              units value = lattice or box
-region		reg block -5  5   -5  5   -0.5 0.5 units box
-
+#region		reg block -5  5   -5  5   -0.5 0.5 units box
+region		reg block -8  8   -8  8   -0.5 0.5 units box
 # Define a simulação com dois tipos de partículas
 #This command creates a simulation box based on the specified region. Thus a region command must first be used to define a geometric domain. It also partitions the simulation box into a regular 3d grid of rectangular bricks, one per processor, based on the number of processors being used and the settings of the processors command. The partitioning can later be changed by the balance or fix balance commands.
 #           Tipo de dados - The argument N is the number of atom types that will be used in the simulation. 
@@ -71,7 +71,9 @@ compute		ke all ke
 compute		re all erotate/sphere
 
 # Set the style and content for printing thermodynamic data to the screen and log files.
-thermo_style	custom step atoms c_ke c_re
+#thermo_style	custom step atoms c_ke c_re
+thermo_style	multi
+
 # Compute and print thermodynamic info (e.g. temperature, energy, pressure) on timesteps that are a multiple of N and at the beginning and end of a simulation. A value of 0 will only print thermodynamics at the beginning and end.
 thermo		100
 # Set options for how thermodynamic information is computed and printed by LAMMPS.
@@ -79,8 +81,9 @@ thermo		100
 thermo_modify	lost warn norm no
 
 # Gera imagens
-dump		2 all image 100 *.jpg type diameter zoom 1.6 view 0 0 
-dump_modify	2 pad 5
+#dump		2 all image 100 *.jpg type diameter zoom 1.6 view 0 0 
+dump m0 all movie 1000 movie.mpg type type size 640 480
+#dump_modify	2 pad 5
 
 # Primeira execução para acomodar os grãos
 run 15000
