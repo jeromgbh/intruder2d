@@ -1,0 +1,56 @@
+## Example 4:	move an intruder in a 2D granular material
+#  New tricks:  use grains as a boundary, 2D simulation, use group to control particles separately
+#  Commands that appears in previous examples will not be repeatedly explained.
+#  More command details in the documentation https://lammps.sandia.gov/doc/Commands.html
+#  LAMMPS version: LAMMPS (7 Aug 2019) on linux
+
+# 2D
+dimension	2
+
+#style = amoeba or angle or atomic or body or bond or charge or dielectric or dipole or dpd or edpd or electron or ellipsoid or full or line or mdpd or molecular or oxdna or peri or smd or sph or sphere or bpm/sphere or spin or tdpd or tri or template or wavepacket or hybrid
+atom_style	sphere
+
+# Fronteira x y z -> p = todas periódicas
+boundary	p p p
+
+# 3a. Lei de Newton para iterações emparelhadas
+newton		on
+
+#vel value = yes or no = do or do not communicate velocity info with ghost atoms
+comm_modify	vel yes
+
+# Região    ID  Bloco xlo,xhi,ylo,yhi,zlo,zhi = bounds of block in all dimensions (distance units)
+#                                              units value = lattice or box
+#region		reg block -5  5   -5  5   -0.5 0.5 units box
+region		reg block -8  8   -8  8   -0.5 0.5 units box
+# Define a simulação com dois tipos de partículas
+#This command creates a simulation box based on the specified region. Thus a region command must first be used to define a geometric domain. It also partitions the simulation box into a regular 3d grid of rectangular bricks, one per processor, based on the number of processors being used and the settings of the processors command. The partitioning can later be changed by the balance or fix balance commands.
+#           Tipo de dados - The argument N is the number of atom types that will be used in the simulation. 
+create_box	2 reg
+
+# Set the style and content for printing thermodynamic data to the screen and log files.
+#thermo_style	custom step atoms c_ke c_re
+thermo_style	multi
+
+# Compute and print thermodynamic info (e.g. temperature, energy, pressure) on timesteps that are a multiple of N and at the beginning and end of a simulation. A value of 0 will only print thermodynamics at the beginning and end.
+thermo		100
+# Set options for how thermodynamic information is computed and printed by LAMMPS.
+# The lost keyword determines whether LAMMPS checks for lost atoms each time it computes thermodynamics and what it does if atoms are lost. An atom can be “lost” if it moves across a non-periodic simulation box boundary or if it moves more than a box length outside the simulation domain (or more than a processor subdomain length) before reneighboring occurs. The latter case is typically due to bad dynamics (e.g., too large a time step and/or huge forces and velocities). If the value is ignore, LAMMPS does not check for lost atoms. If the value is error or warn, LAMMPS checks and either issues an error or warning. The simulation will exit with an error and continue with a warning. A warning will only be issued once, the first time an atom is lost. This can be a useful debugging option.
+thermo_modify	lost warn norm no
+
+# Gera imagens
+#dump		2 all image 100 *.jpg type diameter zoom 1.6 view 0 0 
+dump m0 all movie 1000 movie.mpg type type size 640 480
+#dump_modify	2 pad 5
+
+# Primeira execução para acomodar os grãos
+run 15000
+
+neigh_modify	exclude group intruder1 intruder2
+unfix		12
+
+fix		hxFix intruder1 move linear 0.0 0.9 NULL
+unfix		11
+
+run 25000
+

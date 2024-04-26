@@ -1,0 +1,65 @@
+# Pour 2d granular particles into container
+
+# Simulação 2D
+dimension	2
+
+# Utiliza esferas
+atom_style	sphere
+
+# Fronteiras da caixa: x = não periódico e fixo (f) / y = não periódico e fixo (f) e não periódico e fixo e diminui para um valor mínimo (m) / z = periódico (p)
+boundary	f f p
+
+# Newton’s third law on
+newton		on
+
+# Enables velocity information to be communicated with ghost particles
+comm_modify	vel yes
+
+# Região da simulação
+region		reg block 0 100 0 50 -0.5 0.5 units box
+
+# Cria a caixa de simulação para 1 tipo de átomo com ID reg
+create_box	1 reg
+
+# Parameters that affect the building of pairwise neighbor lists
+neighbor		0.2 bin
+neigh_modify	delay 0
+
+# IMPORTANT NOTE: these values of stiffness (4000) and timestep (0.001)
+# are used in this example file to produce a quick simulation and movie.
+# More appropriate values for realistic simulations would be
+# k = 4.0e5 and dt = 0.0001, as in bench/in.chute (if it were Hertzian).
+# Controla atrito
+pair_style      gran/hertz/history 40000.0 NULL 100.0 NULL 0.5 0
+pair_coeff	* *
+
+# dt
+timestep	0.001
+
+
+fix		1 all nve/sphere
+fix		2 all gravity 1.0 spherical 0.0 -180.0
+fix		xwalls all wall/gran hertz/history 4000.0 NULL 100.0 NULL 0 1 xplane 0 100
+fix		ywalls all wall/gran hertz/history 4000.0 NULL 100.0 NULL 0 1 yplane 0 NULL
+ 
+region	laje block 45.0 55.0 43.0 47.0 -0.5 0.5 units box
+fix		esferas all pour 100 1 4767548 vol 0.8 15 diam range 5.0 6.0 region laje
+
+fix		3 all enforce2d
+
+compute			1 all erotate/sphere
+thermo_style	custom step atoms ke c_1 vol
+thermo			1000
+thermo_modify	lost ignore norm no
+compute_modify	thermo_temp dynamic/dof yes
+
+#dump		id all atom 250 dump.pour
+
+#dump		2 all image 500 image.*.jpg type type &
+#		zoom 1.6 adiam 1.5
+#dump_modify	2 pad 5
+
+dump		3 all movie 500 movie.avi type type zoom 1.6 adiam 5.5
+dump_modify	3 pad 5
+
+run		250000
